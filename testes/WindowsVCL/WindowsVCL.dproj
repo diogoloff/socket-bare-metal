@@ -126,7 +126,6 @@
         </DelphiCompile>
         <DCCReference Include="unMain.pas">
             <Form>frmMain</Form>
-            <FormType>dfm</FormType>
         </DCCReference>
         <BuildConfiguration Include="Release">
             <Key>Cfg_2</Key>

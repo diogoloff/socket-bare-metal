@@ -3,18 +3,21 @@ unit SBM.Listener;
 interface
 
 uses
-    System.SysUtils, WinApi.Windows, WinApi.WinSock;
+    System.SysUtils, WinApi.Windows, WinApi.WinSock, SBM.Connection, SBM.ThreadPoolManager;
 
 type
     TSBMListener = class
     private
         FServerSocket: TSocket;
         FPort: Word;
+        FRunning: Boolean;
+        FPoolManager: TSBMThreadPoolManager;
         procedure InitWinSock;
         procedure CreateSocket;
         procedure BindAndListen;
     public
-        constructor Create(APort: Word);
+        constructor Create(APort: Word; APoolManager: TSBMThreadPoolManager);
+        destructor Destroy; override;
         procedure Start;
         procedure Stop;
     end;
@@ -23,9 +26,14 @@ implementation
 
 { TSBMListener }
 
-constructor TSBMListener.Create(APort: Word);
+constructor TSBMListener.Create(APort: Word; APoolManager: TSBMThreadPoolManager);
 begin
     FPort := APort;
+
+    if (not Assigned(APoolManager)) then
+        raise Exception.Create('Erro ao criar TSBMListener, não foi informado o TSBMThreadPoolManager');
+
+    FPoolManager := APoolManager;
 end;
 
 procedure TSBMListener.InitWinSock;
@@ -42,6 +50,14 @@ begin
     FServerSocket := socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if FServerSocket = INVALID_SOCKET then
         raise Exception.Create('Erro ao criar socket');
+end;
+
+destructor TSBMListener.Destroy;
+begin
+    if Assigned(FPoolManager) then
+        FPoolManager.Free;
+
+    inherited;
 end;
 
 procedure TSBMListener.BindAndListen;
@@ -63,16 +79,30 @@ begin
 end;
 
 procedure TSBMListener.Start;
+var
+    ClientSocket: TSocket;
+    ClientConn: TSBMConnection;
 begin
     InitWinSock;
     CreateSocket;
     BindAndListen;
 
-    // Aqui futuramente vamos aceitar conexões e repassar para o thread pool
+    FRunning := True;
+    while FRunning do
+    begin
+        ClientSocket := accept(FServerSocket, nil, nil);
+        if ClientSocket = INVALID_SOCKET then
+            Continue;
+
+        ClientConn := TSBMConnection.Create(ClientSocket);
+        if (FPoolManager = nil) or (not FPoolManager.AddConnection(ClientConn)) then
+            ClientConn.SendAndClose('HTTP/1.1 503 Service Unavailable'#13#10 + 'Content-Length: 0'#13#10#13#10);
+    end;
 end;
 
 procedure TSBMListener.Stop;
 begin
+    FRunning := False;
     closesocket(FServerSocket);
     WSACleanup;
 end;

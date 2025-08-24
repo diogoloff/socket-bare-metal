@@ -22,4 +22,13 @@ object frmMain: TfrmMain
     TabOrder = 0
     OnClick = btnIniciarServerClick
   end
+  object btnPararServer: TButton
+    Left = 40
+    Top = 64
+    Width = 113
+    Height = 25
+    Caption = 'Parar Server'
+    TabOrder = 1
+    OnClick = btnPararServerClick
+  end
 end

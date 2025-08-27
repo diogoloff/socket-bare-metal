@@ -3,7 +3,7 @@ unit SBM.Connection;
 interface
 
 uses
-    System.SysUtils, WinApi.WinSock;
+    System.SysUtils, WinApi.WinSock, System.Generics.Collections, SBM.Security.RequestValidator;
 
 type
     TSBMConnection = class
@@ -11,7 +11,8 @@ type
         FSocket: TSocket;
     public
         constructor Create(ASocket: TSocket);
-        procedure ReadData;
+        function ReadData : Boolean;
+        procedure ProcessRequest;
         procedure SendData(const AData: string);
         procedure SendAndClose(const AData: string);
         procedure Close;
@@ -26,16 +27,61 @@ begin
     FSocket := ASocket;
 end;
 
-procedure TSBMConnection.ReadData;
+function TSBMConnection.ReadData : Boolean;
 var
     Buffer: array[0..1023] of Byte;
     BytesReceived: Integer;
+    RawRequest: string;
+    Headers: TDictionary<String, String>;
 begin
+    Result := False;
+
     BytesReceived := recv(FSocket, Buffer, Length(Buffer), 0);
     if BytesReceived = SOCKET_ERROR then
         raise Exception.Create('Erro ao receber dados');
 
-    // Aqui você pode converter o buffer para string e processar
+    SetString(RawRequest, PAnsiChar(@Buffer), BytesReceived);
+
+    if not TSBMRequestValidator.IsValidRequest(RawRequest) then
+    begin
+        SendAndClose('HTTP/1.1 400 Bad Request'#13#10 + 'Content-Length: 0'#13#10#13#10);
+        Exit;
+    end;
+
+    if not TSBMRequestValidator.IsRequestSizeAcceptable(RawRequest) then
+    begin
+        SendAndClose('HTTP/1.1 413 Payload Too Large'#13#10 + 'Content-Length: 0'#13#10#13#10);
+        Exit;
+    end;
+
+    Headers := TSBMRequestValidator.ParseHeaders(RawRequest);
+    try
+        if not TSBMRequestValidator.HasRequiredHeaders(Headers) then
+        begin
+            SendAndClose('HTTP/1.1 400 Missing Required Headers'#13#10 + 'Content-Length: 0'#13#10#13#10);
+            Exit;
+        end;
+
+        if not TSBMRequestValidator.AreHeadersSafe(Headers) then
+        begin
+            SendAndClose('HTTP/1.1 431 Request Header Fields Too Large'#13#10 + 'Content-Length: 0'#13#10#13#10);
+            Exit;
+        end;
+    finally
+        Headers.Free;
+    end;
+
+    Result := True;
+end;
+
+procedure TSBMConnection.ProcessRequest;
+begin
+    if (not ReadData) then
+        Exit;
+
+    SendAndClose('HTTP/1.1 200 OK'#13#10 + 'Content-Length: 0'#13#10#13#10);
+
+    // Futuras etapas: autenticação, roteamento, etc.
 end;
 
 procedure TSBMConnection.SendData(const AData: string);

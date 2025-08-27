@@ -121,8 +121,7 @@ begin
       if Assigned(Conn) then
       begin
           try
-              //Conn.ProcessRequest;
-              Conn.SendAndClose('HTTP/1.1 200 OK'#13#10 + 'Content-Length: 0'#13#10#13#10);
+              Conn.ProcessRequest;
           except
               on E: Exception do
                   Conn.SendAndClose('HTTP/1.1 500 ' + E.Message + #13#10 + 'Content-Length: 0'#13#10#13#10);

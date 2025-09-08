@@ -31,12 +31,26 @@ implementation
 
 procedure TfrmMain.btnIniciarServerClick(Sender: TObject);
 begin
+    { O SBM roda dentro de uma Thread, por isto aqui foi utilizado o TTaks,
+      que é uma forma simples de criar um Thread no Delphi. Se ele não estiver
+      em Thread a aplicação ficará presa a mainthread no momento do FListener.Start.
+    }
     FTask := TTask.Run(
     procedure
     begin
-        FPoolManager := TSBMThreadPoolManager.Create; // posso indicar tamanho e quantos workers padrão cada fila tera
+        { TSBMThreadPoolManager é o componente primordial do controle das requisições
+          ele irá gerenciar a carga suportada, possui três parâmetros em ordem:
+          * AMaxQueueSize: Tamanho máximo da fila de um worker, default 10.
+          * ADefaultThreadCount: Quantidade de workers, default 4.
+          * AScaleThreshold: Tamanho máximo da fila para escalar automaticamente novos workers,
+                             se este valor for >= a AMaxQueueSize não escala automaticamente, default 10.
+        }
+        FPoolManager := TSBMThreadPoolManager.Create;
 
-
+        { TSBMListener responsável por escutar a porta, abrir o socket, possui dois parâmetros em ordem:
+          * APort: Número da porta.
+          * APoolManager: Objeto de TSBMThreadPoolManager.
+        }
         FListener := TSBMListener.Create(8080, FPoolManager);
         FListener.Start;
     end);
@@ -48,6 +62,7 @@ procedure TfrmMain.btnPararServerClick(Sender: TObject);
 begin
     if Assigned(FListener) then
     begin
+        // Para de escutar a porta e libera o componente
         FListener.Stop;
         FListener.Free;
     end;

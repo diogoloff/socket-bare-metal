@@ -3,7 +3,7 @@ unit SBM.Connection;
 interface
 
 uses
-    System.SysUtils, WinApi.WinSock, System.Generics.Collections, SBM.Security.RequestValidator;
+    System.Classes, System.SysUtils, WinApi.WinSock, System.Generics.Collections, SBM.Security.RequestValidator, SBM.Exception;
 
 type
     TSBMConnection = class
@@ -11,11 +11,13 @@ type
         FSocket: TSocket;
     public
         constructor Create(ASocket: TSocket);
+        procedure Close;
         function ReadData : Boolean;
         procedure ProcessRequest;
-        procedure SendData(const AData: string);
-        procedure SendAndClose(const AData: string);
-        procedure Close;
+        procedure SendData(const AData: String);
+        procedure SendAndClose(const AData: String);
+        procedure SendHttpResponse(AStatusCode: Integer; const AStatusMessage: String;
+          const ABody: String = ''; const AContentType: String = 'text/plain'; const AExtraHeaders: TStrings = nil);
     end;
 
 implementation
@@ -27,46 +29,53 @@ begin
     FSocket := ASocket;
 end;
 
+procedure TSBMConnection.Close;
+begin
+    shutdown(FSocket, SD_SEND);
+    closesocket(FSocket);
+end;
+
 function TSBMConnection.ReadData : Boolean;
 var
     Buffer: array[0..1023] of Byte;
     BytesReceived: Integer;
-    RawRequest: string;
+    RawRequest: String;
     Headers: TDictionary<String, String>;
 begin
-    Result := False;
-
     BytesReceived := recv(FSocket, Buffer, Length(Buffer), 0);
     if BytesReceived = SOCKET_ERROR then
-        raise Exception.Create('Erro ao receber dados');
+        raise Exception.Create('Failed to receive data from socket');
 
     SetString(RawRequest, PAnsiChar(@Buffer), BytesReceived);
 
-    if not TSBMRequestValidator.IsValidRequest(RawRequest) then
-    begin
-        SendAndClose('HTTP/1.1 400 Bad Request'#13#10 + 'Content-Length: 0'#13#10#13#10);
-        Exit;
-    end;
+    if (not TSBMRequestValidator.IsValidRequest(RawRequest)) then
+        raise EHttpErrors.BadRequest;
 
-    if not TSBMRequestValidator.IsRequestSizeAcceptable(RawRequest) then
-    begin
-        SendAndClose('HTTP/1.1 413 Payload Too Large'#13#10 + 'Content-Length: 0'#13#10#13#10);
-        Exit;
-    end;
+    if (not TSBMRequestValidator.IsRequestSizeAcceptable(RawRequest)) then
+        raise EHttpErrors.PayloadTooLarge;
+
+    if (not TSBMRequestValidator.IsRequestSmugglingSafe(RawRequest)) then
+        raise EHttpErrors.BadRequest;
+
+    if (not TSBMRequestValidator.IsMethodAllowed(RawRequest)) then
+        raise EHttpErrors.MethodNotAllowed;
 
     Headers := TSBMRequestValidator.ParseHeaders(RawRequest);
     try
-        if not TSBMRequestValidator.HasRequiredHeaders(Headers) then
-        begin
-            SendAndClose('HTTP/1.1 400 Missing Required Headers'#13#10 + 'Content-Length: 0'#13#10#13#10);
-            Exit;
-        end;
+        if (not TSBMRequestValidator.HasRequiredHeaders(Headers)) then
+            raise EHttpErrors.BadRequest;
 
-        if not TSBMRequestValidator.AreHeadersSafe(Headers) then
-        begin
-            SendAndClose('HTTP/1.1 431 Request Header Fields Too Large'#13#10 + 'Content-Length: 0'#13#10#13#10);
-            Exit;
-        end;
+        if (not TSBMRequestValidator.AreHeadersSafe(Headers)) then
+            raise EHttpErrors.HeaderFieldsTooLarge;
+
+        if (not TSBMRequestValidator.IsContentTypeValid(Headers)) then
+            raise EHttpErrors.UnsupportedMediaType;
+
+        if (not TSBMRequestValidator.IsHostValid(Headers)) then
+            raise EHttpErrors.BadRequest;
+
+        if (not TSBMRequestValidator.IsUserAgentAllowed(Headers)) then
+            raise EHttpErrors.Forbidden;
     finally
         Headers.Free;
     end;
@@ -75,22 +84,33 @@ begin
 end;
 
 procedure TSBMConnection.ProcessRequest;
+var
+    Headers: TStringList;
 begin
     if (not ReadData) then
         Exit;
 
-    SendAndClose('HTTP/1.1 200 OK'#13#10 + 'Content-Length: 0'#13#10#13#10);
+    // Exemplo fixo de retorno, os headers extras poderia até ser configurados
+    Headers := TStringList.Create;
+    try
+        Headers.Add('Connection: close');
+        Headers.Add('X-Custom-Header: SocketBareMetal');
+
+        SendHttpResponse(200, 'OK', '{"msg":"done"}', 'application/json', Headers);
+    finally
+        Headers.Free;
+    end;
 
     // Futuras etapas: autenticação, roteamento, etc.
 end;
 
-procedure TSBMConnection.SendData(const AData: string);
+procedure TSBMConnection.SendData(const AData: String);
 begin
     if send(FSocket, PAnsiChar(AnsiString(AData))^, Length(AData), 0) = SOCKET_ERROR then
-        raise Exception.Create('Erro ao enviar dados');
+        raise Exception.Create('Failed to send data to socket');
 end;
 
-procedure TSBMConnection.SendAndClose(const AData: string);
+procedure TSBMConnection.SendAndClose(const AData: String);
 begin
     try
         SendData(AData);
@@ -100,10 +120,39 @@ begin
     end;
 end;
 
-procedure TSBMConnection.Close;
+
+procedure TSBMConnection.SendHttpResponse(AStatusCode: Integer; const AStatusMessage: string;
+  const ABody: String; const AContentType: String; const AExtraHeaders: TStrings);
+var
+    Response: TStringBuilder;
 begin
-    shutdown(FSocket, SD_SEND);
-    closesocket(FSocket);
+    Response := TStringBuilder.Create;
+    try
+        // Linha do Status
+        Response.AppendFormat('HTTP/1.1 %d %s'#13#10, [AStatusCode, AStatusMessage]);
+
+        // Content-Type
+        if ABody <> '' then
+            Response.AppendFormat('Content-Type: %s'#13#10, [AContentType]);
+
+        // Content-Length
+        Response.AppendFormat('Content-Length: %d'#13#10, [Length(ABody)]);
+
+        // Headers extras
+        if Assigned(AExtraHeaders) then
+            Response.Append(AExtraHeaders.Text);
+
+        // Fim dos headers
+        Response.Append(#13#10);
+
+        // Corpo
+        Response.Append(ABody);
+
+        // Envia e fecha
+        SendAndClose(Response.ToString);
+    finally
+        Response.Free;
+    end;
 end;
 
 end.

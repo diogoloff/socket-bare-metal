@@ -96,7 +96,7 @@ begin
 
         ClientConn := TSBMConnection.Create(ClientSocket);
         if (FPoolManager = nil) or (not FPoolManager.AddConnection(ClientConn)) then
-            ClientConn.SendAndClose('HTTP/1.1 503 Service Unavailable'#13#10 + 'Content-Length: 0'#13#10#13#10);
+            ClientConn.SendHttpResponse(503, 'Service Unavailable');
     end;
 end;
 

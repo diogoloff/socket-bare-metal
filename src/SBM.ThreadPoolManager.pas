@@ -86,13 +86,13 @@ begin
         Result := Info.Pool.EnqueueConnection(AConnection);
 
         if not Result then
-            AConnection.SendAndClose('HTTP/1.1 503 Service Unavailable'#13#10 + 'Content-Length: 0'#13#10#13#10);
+            AConnection.SendHttpResponse(503, 'Service Unavailable');
 
         ScalePoolsIfNeeded;
     except
         on E: Exception do
         begin
-            AConnection.SendAndClose('HTTP/1.1 500 Internal Server Error'#13#10 + 'Content-Length: 0'#13#10#13#10);
+            AConnection.SendHttpResponse(500, 'Internal Server Error');
             Result := False;
         end;
     end;

@@ -9,8 +9,9 @@ type
     TSBMConnection = class
     private
         FSocket: TSocket;
+        FRequestPolicy: TSBMRequestPolicy;
     public
-        constructor Create(ASocket: TSocket);
+        constructor Create(ASocket: TSocket; ARequestPolicy: TSBMRequestPolicy);
         procedure Close;
         function ReadData : Boolean;
         procedure ProcessRequest;
@@ -24,9 +25,10 @@ implementation
 
 { TSBMConnection }
 
-constructor TSBMConnection.Create(ASocket: TSocket);
+constructor TSBMConnection.Create(ASocket: TSocket; ARequestPolicy: TSBMRequestPolicy);
 begin
     FSocket := ASocket;
+    FRequestPolicy := ARequestPolicy;
 end;
 
 procedure TSBMConnection.Close;
@@ -51,30 +53,33 @@ begin
     if (not TSBMRequestValidator.IsValidRequest(RawRequest)) then
         raise EHttpErrors.BadRequest;
 
-    if (not TSBMRequestValidator.IsRequestSizeAcceptable(RawRequest)) then
-        raise EHttpErrors.PayloadTooLarge;
-
     if (not TSBMRequestValidator.IsRequestSmugglingSafe(RawRequest)) then
         raise EHttpErrors.BadRequest;
 
-    if (not TSBMRequestValidator.IsMethodAllowed(RawRequest)) then
+    if (not Assigned(FRequestPolicy)) then
+        Exit(True);
+
+    if (not TSBMRequestValidator.IsRequestSizeAcceptable(RawRequest, FRequestPolicy)) then
+        raise EHttpErrors.PayloadTooLarge;
+
+    if (not TSBMRequestValidator.IsMethodAllowed(RawRequest, FRequestPolicy)) then
         raise EHttpErrors.MethodNotAllowed;
 
-    Headers := TSBMRequestValidator.ParseHeaders(RawRequest);
+    Headers := TSBMRequestValidator.ParseHeaders(RawRequest, FRequestPolicy);
     try
-        if (not TSBMRequestValidator.HasRequiredHeaders(Headers)) then
+        if (not TSBMRequestValidator.HasRequiredHeaders(Headers, FRequestPolicy)) then
             raise EHttpErrors.BadRequest;
 
-        if (not TSBMRequestValidator.AreHeadersSafe(Headers)) then
+        if (not TSBMRequestValidator.AreHeadersSafe(Headers, FRequestPolicy)) then
             raise EHttpErrors.HeaderFieldsTooLarge;
 
-        if (not TSBMRequestValidator.IsContentTypeValid(Headers)) then
+        if (not TSBMRequestValidator.IsContentTypeValid(Headers, FRequestPolicy)) then
             raise EHttpErrors.UnsupportedMediaType;
 
-        if (not TSBMRequestValidator.IsHostValid(Headers)) then
+        if (not TSBMRequestValidator.IsHostValid(Headers, FRequestPolicy)) then
             raise EHttpErrors.BadRequest;
 
-        if (not TSBMRequestValidator.IsUserAgentAllowed(Headers)) then
+        if (not TSBMRequestValidator.IsUserAgentAllowed(Headers, FRequestPolicy)) then
             raise EHttpErrors.Forbidden;
     finally
         Headers.Free;

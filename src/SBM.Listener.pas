@@ -3,7 +3,7 @@ unit SBM.Listener;
 interface
 
 uses
-    System.SysUtils, WinApi.Windows, WinApi.WinSock, SBM.Connection, SBM.ThreadPoolManager;
+    System.SysUtils, WinApi.Windows, WinApi.WinSock, SBM.Connection, SBM.ThreadPoolManager, SBM.Security.RequestValidator;
 
 type
     TSBMListener = class
@@ -12,11 +12,12 @@ type
         FPort: Word;
         FRunning: Boolean;
         FPoolManager: TSBMThreadPoolManager;
+        FRequestPolicy: TSBMRequestPolicy;
         procedure InitWinSock;
         procedure CreateSocket;
         procedure BindAndListen;
     public
-        constructor Create(APort: Word; APoolManager: TSBMThreadPoolManager);
+        constructor Create(APort: Word; APoolManager: TSBMThreadPoolManager; ARequestPolicy: TSBMRequestPolicy);
         destructor Destroy; override;
         procedure Start;
         procedure Stop;
@@ -26,7 +27,7 @@ implementation
 
 { TSBMListener }
 
-constructor TSBMListener.Create(APort: Word; APoolManager: TSBMThreadPoolManager);
+constructor TSBMListener.Create(APort: Word; APoolManager: TSBMThreadPoolManager; ARequestPolicy: TSBMRequestPolicy);
 begin
     FPort := APort;
 
@@ -34,6 +35,7 @@ begin
         raise Exception.Create('Erro ao criar TSBMListener, não foi informado o TSBMThreadPoolManager');
 
     FPoolManager := APoolManager;
+    FRequestPolicy := ARequestPolicy;
 end;
 
 procedure TSBMListener.InitWinSock;
@@ -56,6 +58,9 @@ destructor TSBMListener.Destroy;
 begin
     if Assigned(FPoolManager) then
         FPoolManager.Free;
+
+    if Assigned(FRequestPolicy) then
+        FRequestPolicy.Free;
 
     inherited;
 end;
@@ -94,7 +99,7 @@ begin
         if ClientSocket = INVALID_SOCKET then
             Continue;
 
-        ClientConn := TSBMConnection.Create(ClientSocket);
+        ClientConn := TSBMConnection.Create(ClientSocket, FRequestPolicy);
         if (FPoolManager = nil) or (not FPoolManager.AddConnection(ClientConn)) then
             ClientConn.SendHttpResponse(503, 'Service Unavailable');
     end;

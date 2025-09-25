@@ -5,7 +5,7 @@ interface
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, System.Threading,
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls,
-  SBM.Listener, SBM.ThreadPoolManager;
+  SBM.Listener, SBM.ThreadPoolManager, SBM.Security.REquestValidator;
 
 type
   TfrmMain = class(TForm)
@@ -15,8 +15,9 @@ type
     procedure btnPararServerClick(Sender: TObject);
   private
     { Private declarations }
-    FListener : TSBMListener;
+    FListener: TSBMListener;
     FPoolManager: TSBMThreadPoolManager;
+    FRequestPolicy: TSBMRequestPolicy;
     FTask: ITask;
   public
     { Public declarations }
@@ -47,11 +48,33 @@ begin
         }
         FPoolManager := TSBMThreadPoolManager.Create;
 
+        { TSBMRequestPolicy é o componente para validar algumas questões de segurança da
+          estrutura da requisição. O exemplo abaixo esta com os mesmos valores Default que
+          já são criados no TSBMRequestPolicy.Create então não é necessário declarar todos,
+          somente os que deseja sobrescrever.
+        }
+        FRequestPolicy := TSBMRequestPolicy.Create;
+
+        with FRequestPolicy do
+        begin
+            AllowedMethods := ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
+            RequiredHeaders := ['host', 'user-agent'];
+            AllowedContentTypes := ['application/json', 'text/plain'];
+            AllowedHosts := [];
+            BlockedUserAgents := ['curl', 'bot'];
+            MaxRequestSize := 8192;
+            MaxHeaderKeySize := 100;
+            MaxHeaderValueSize := 1024;
+            MaxHeaderSize := 2048;
+            MaxHeaderCount := 50;
+        end;
+
         { TSBMListener responsável por escutar a porta, abrir o socket, possui dois parâmetros em ordem:
           * APort: Número da porta.
           * APoolManager: Objeto de TSBMThreadPoolManager.
+          * ARequestPolicy: Objeto de TSBMRequestPolicy, se não for informado, não faz nenhum tipo de validação da estrutura, não faz parse dos Headers.
         }
-        FListener := TSBMListener.Create(8080, FPoolManager);
+        FListener := TSBMListener.Create(8080, FPoolManager, FRequestPolicy);
         FListener.Start;
     end);
 

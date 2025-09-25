@@ -11,40 +11,73 @@ uses
     System.SysUtils, System.Classes, System.Generics.Collections, System.RegularExpressions, System.StrUtils;
 
 type
+    TSBMRequestPolicy = class
+    public
+        AllowedMethods: TArray<string>;
+        RequiredHeaders: TArray<string>;
+        AllowedContentTypes: TArray<string>;
+        AllowedHosts: TArray<string>;
+        BlockedUserAgents: TArray<string>;
+        MaxRequestSize: Integer;
+        MaxHeaderKeySize: Integer;
+        MaxHeaderValueSize: Integer;
+        MaxHeaderSize: Integer;
+        MaxHeaderCount: Integer;
+        constructor Create;
+    end;
+
     TSBMRequestValidator = class
     public
         // Validação geral do método HTTP
         class function IsValidRequest(const ARaw: String): Boolean;
 
-        // Validação de tamanho da requisição
-        class function IsRequestSizeAcceptable(const ARaw: String; AMaxSize: Integer = 8192): Boolean;
-
-        // Parse dos headers em dicionário
-        class function ParseHeaders(const ARaw: String): TDictionary<String, String>;
-
         // Proteção contra HTTP Request Smuggling
         class function IsRequestSmugglingSafe(const ARaw: String): Boolean;
 
+        // Validação de tamanho da requisição
+        class function IsRequestSizeAcceptable(const ARaw: String; const APolicy: TSBMRequestPolicy): Boolean;
+
+        // Parse dos headers em dicionário
+        class function ParseHeaders(const ARaw: String; const APolicy: TSBMRequestPolicy): TDictionary<String, String>;
+
         // Validação de método permitido
-        class function IsMethodAllowed(const ARaw: String): Boolean;
+        class function IsMethodAllowed(const ARaw: String; const APolicy: TSBMRequestPolicy): Boolean;
 
         // Validação de headers obrigatórios
-        class function HasRequiredHeaders(const AHeaders: TDictionary<String, String>): Boolean;
+        class function HasRequiredHeaders(const AHeaders: TDictionary<String, String>; const APolicy: TSBMRequestPolicy): Boolean;
 
         // Validação de segurança dos headers
-        class function AreHeadersSafe(const AHeaders: TDictionary<String, String>): Boolean;
+        class function AreHeadersSafe(const AHeaders: TDictionary<String, String>; const APolicy: TSBMRequestPolicy): Boolean;
 
         // Validação de Content-Type
-        class function IsContentTypeValid(const AHeaders: TDictionary<String, String>): Boolean;
+        class function IsContentTypeValid(const AHeaders: TDictionary<String, String>; const APolicy: TSBMRequestPolicy): Boolean;
 
         // Validação de Host
-        class function IsHostValid(const AHeaders: TDictionary<String, String>): Boolean;
+        class function IsHostValid(const AHeaders: TDictionary<String, String>; const APolicy: TSBMRequestPolicy): Boolean;
 
         // Validação de User-Agent
-        class function IsUserAgentAllowed(const AHeaders: TDictionary<String, String>): Boolean;
+        class function IsUserAgentAllowed(const AHeaders: TDictionary<String, String>; const APolicy: TSBMRequestPolicy): Boolean;
     end;
 
 implementation
+
+{ TSBMRequestPolicy }
+
+constructor TSBMRequestPolicy.Create;
+begin
+    AllowedMethods := ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'];
+    RequiredHeaders := ['host', 'user-agent'];
+    AllowedContentTypes := ['application/json', 'text/plain'];
+    AllowedHosts := [];
+    BlockedUserAgents := ['curl', 'bot'];
+    MaxRequestSize := 8192;
+    MaxHeaderKeySize := 100;
+    MaxHeaderValueSize := 1024;
+    MaxHeaderSize := 2048;
+    MaxHeaderCount := 50;
+end;
+
+{ TSBMRequestValidator }
 
 class function TSBMRequestValidator.IsValidRequest(const ARaw: String): Boolean;
 begin
@@ -58,17 +91,17 @@ begin
         ARaw.StartsWith('PATCH ');
 end;
 
-class function TSBMRequestValidator.IsRequestSizeAcceptable(const ARaw: String; AMaxSize: Integer): Boolean;
-begin
-    Result := Length(ARaw) <= AMaxSize;
-end;
-
 class function TSBMRequestValidator.IsRequestSmugglingSafe(const ARaw: String): Boolean;
 begin
     Result := (ARaw.IndexOf('Content-Length:') = ARaw.LastIndexOf('Content-Length:')) and (not ARaw.Contains('Transfer-Encoding: chunked'));
 end;
 
-class function TSBMRequestValidator.IsMethodAllowed(const ARaw: String): Boolean;
+class function TSBMRequestValidator.IsRequestSizeAcceptable(const ARaw: String; const APolicy: TSBMRequestPolicy): Boolean;
+begin
+    Result := Length(ARaw) <= APolicy.MaxRequestSize;
+end;
+
+class function TSBMRequestValidator.IsMethodAllowed(const ARaw: String; const APolicy: TSBMRequestPolicy): Boolean;
 var
     FirstLine: String;
     LineEnd: Integer;
@@ -82,10 +115,10 @@ begin
 
     Method := Trim(Copy(FirstLine, 1, Pos(' ', FirstLine) - 1));
 
-    Result := IndexStr(Method, ['GET', 'POST', 'PUT', 'DELETE']) >= 0;
+    Result := IndexStr(Method, APolicy.AllowedMethods) >= 0;
 end;
 
-class function TSBMRequestValidator.ParseHeaders(const ARaw: String): TDictionary<String, String>;
+class function TSBMRequestValidator.ParseHeaders(const ARaw: String; const APolicy: TSBMRequestPolicy): TDictionary<String, String>;
 var
     Lines: TArray<String>;
     Line, Key, Value: String;
@@ -119,12 +152,16 @@ begin
                 Continue;
             end;
 
+            // Limite de tamanho por chave individual
+            if (Length(Key) > APolicy.MaxHeaderKeySize) then
+                Continue;
+
             // Limite de tamanho por valor individual
-            if (Length(Value) > 1024) then
+            if (Length(Value) > APolicy.MaxHeaderValueSize) then
                 Continue;
 
             // Descarta header com tamanho total superior ao limite
-            if (Length(Key) + Length(Value) > 4096) then
+            if (Length(Key) + Length(Value) > APolicy.MaxHeaderSize) then
                 Continue;
 
             Result.AddOrSetValue(Key.ToLower, Value);
@@ -132,52 +169,75 @@ begin
     end;
 end;
 
-class function TSBMRequestValidator.HasRequiredHeaders(const AHeaders: TDictionary<String, String>): Boolean;
+class function TSBMRequestValidator.HasRequiredHeaders(const AHeaders: TDictionary<String, String>; const APolicy: TSBMRequestPolicy): Boolean;
+var
+    RequiredHeader: string;
 begin
-    Result := AHeaders.ContainsKey('host');
+    for RequiredHeader in APolicy.RequiredHeaders do
+    begin
+        if not AHeaders.ContainsKey(RequiredHeader.ToLower) then
+            Exit(False);
+    end;
+
+    Result := True;
 end;
 
-class function TSBMRequestValidator.AreHeadersSafe(const AHeaders: TDictionary<String, String>): Boolean;
-var
-    Key: string;
+class function TSBMRequestValidator.AreHeadersSafe(const AHeaders: TDictionary<String, String>; const APolicy: TSBMRequestPolicy): Boolean;
 begin
-    Result := AHeaders.Count <= 50;
+    Result := AHeaders.Count <= APolicy.MaxHeaderCount;
     if (not Result) then
         Exit;
-
-    for Key in AHeaders.Keys do
-        if Length(Key) > 100 then
-            Exit(False);
 end;
 
-class function TSBMRequestValidator.IsContentTypeValid(const AHeaders: TDictionary<String, String>): Boolean;
+class function TSBMRequestValidator.IsContentTypeValid(const AHeaders: TDictionary<String, String>; const APolicy: TSBMRequestPolicy): Boolean;
 var
-    ContentType: string;
+    ContentType, Allowed: string;
 begin
     if (not AHeaders.TryGetValue('content-type', ContentType)) then
         Exit(True);
 
-    Result := ContentType.StartsWith('application/json') or ContentType.StartsWith('text/plain');
+    ContentType := ContentType.ToLower;
+
+    for Allowed in APolicy.AllowedContentTypes do
+    begin
+        if ContentType.StartsWith(Allowed.ToLower) then
+            Exit(True);
+    end;
+
+    Result := False;
 end;
 
-class function TSBMRequestValidator.IsHostValid(const AHeaders: TDictionary<String, String>): Boolean;
+class function TSBMRequestValidator.IsHostValid(const AHeaders: TDictionary<String, String>; const APolicy: TSBMRequestPolicy): Boolean;
 var
     Host: string;
 begin
     if (not AHeaders.TryGetValue('host', Host)) then
         Exit(False);
 
-    Result := (Host <> '') and (not Host.Contains(' '));
+    Host := Host.ToLower;
+
+    if Length(APolicy.AllowedHosts) > 0 then
+        Result := (Host <> '') and (not Host.Contains(' ')) and (MatchText(Host, APolicy.AllowedHosts))
+    else
+        Result := (Host <> '') and (not Host.Contains(' '));
 end;
 
-class function TSBMRequestValidator.IsUserAgentAllowed(const AHeaders: TDictionary<String, String>): Boolean;
+class function TSBMRequestValidator.IsUserAgentAllowed(const AHeaders: TDictionary<String, String>; const APolicy: TSBMRequestPolicy): Boolean;
 var
-    UA: String;
+    UA, Blocked: string;
 begin
-    if (not AHeaders.TryGetValue('user-agent', UA)) then
+    if not AHeaders.TryGetValue('user-agent', UA) then
         Exit(True);
 
-    Result := (not UA.Contains('curl')) and (not UA.Contains('bot'));
+    UA := UA.ToLower;
+
+    for Blocked in APolicy.BlockedUserAgents do
+    begin
+        if UA.Contains(Blocked.ToLower) then
+            Exit(False);
+    end;
+
+    Result := True;
 end;
 
 end.

@@ -3,7 +3,8 @@ unit SBM.Listener;
 interface
 
 uses
-    System.SysUtils, WinApi.Windows, WinApi.WinSock, SBM.Connection, SBM.ThreadPoolManager, SBM.Security.RequestValidator;
+    System.SysUtils, WinApi.Windows, WinApi.WinSock, SBM.Connection, SBM.ThreadPoolManager, SBM.Security.RequestValidator,
+    SBM.Routes;
 
 type
     TSBMListener = class
@@ -13,11 +14,12 @@ type
         FRunning: Boolean;
         FPoolManager: TSBMThreadPoolManager;
         FRequestPolicy: TSBMRequestPolicy;
+        FRouteRegistry: TSBMRouteRegistry;
         procedure InitWinSock;
         procedure CreateSocket;
         procedure BindAndListen;
     public
-        constructor Create(APort: Word; APoolManager: TSBMThreadPoolManager; ARequestPolicy: TSBMRequestPolicy);
+        constructor Create(APort: Word; APoolManager: TSBMThreadPoolManager; ARequestPolicy: TSBMRequestPolicy; ARouteRegistry: TSBMRouteRegistry);
         destructor Destroy; override;
         procedure Start;
         procedure Stop;
@@ -27,15 +29,19 @@ implementation
 
 { TSBMListener }
 
-constructor TSBMListener.Create(APort: Word; APoolManager: TSBMThreadPoolManager; ARequestPolicy: TSBMRequestPolicy);
+constructor TSBMListener.Create(APort: Word; APoolManager: TSBMThreadPoolManager; ARequestPolicy: TSBMRequestPolicy; ARouteRegistry: TSBMRouteRegistry);
 begin
     FPort := APort;
 
     if (not Assigned(APoolManager)) then
         raise Exception.Create('Erro ao criar TSBMListener, não foi informado o TSBMThreadPoolManager');
 
+    if (Assigned(FRouteRegistry)) then
+        raise Exception.Create('Erro ao criar TSBMListener, não foi informado o TSBMRouteRegistry');
+
     FPoolManager := APoolManager;
     FRequestPolicy := ARequestPolicy;
+    FRouteRegistry := ARouteRegistry
 end;
 
 procedure TSBMListener.InitWinSock;
@@ -99,7 +105,7 @@ begin
         if ClientSocket = INVALID_SOCKET then
             Continue;
 
-        ClientConn := TSBMConnection.Create(ClientSocket, FRequestPolicy);
+        ClientConn := TSBMConnection.Create(ClientSocket, FRequestPolicy, FRouteRegistry);
         if (FPoolManager = nil) or (not FPoolManager.AddConnection(ClientConn)) then
             ClientConn.SendHttpResponse(503, 'Service Unavailable');
     end;

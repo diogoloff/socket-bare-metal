@@ -3,17 +3,19 @@ unit SBM.Connection;
 interface
 
 uses
-    System.Classes, System.SysUtils, WinApi.WinSock, System.Generics.Collections, SBM.Security.RequestValidator, SBM.Exception;
+    System.Classes, System.SysUtils, WinApi.WinSock, System.Generics.Collections, SBM.Security.RequestValidator, SBM.Exception,
+    SBM.Routes;
 
 type
     TSBMConnection = class
     private
         FSocket: TSocket;
         FRequestPolicy: TSBMRequestPolicy;
+        FRouteRegistry: TSBMRouteRegistry;
     public
-        constructor Create(ASocket: TSocket; ARequestPolicy: TSBMRequestPolicy);
+        constructor Create(ASocket: TSocket; ARequestPolicy: TSBMRequestPolicy; ARouteRegistry: TSBMRouteRegistry);
         procedure Close;
-        function ReadData : Boolean;
+        function ReadData(var Request: TSBMRequest) : Boolean;
         procedure ProcessRequest;
         procedure SendData(const AData: String);
         procedure SendAndClose(const AData: String);
@@ -25,10 +27,11 @@ implementation
 
 { TSBMConnection }
 
-constructor TSBMConnection.Create(ASocket: TSocket; ARequestPolicy: TSBMRequestPolicy);
+constructor TSBMConnection.Create(ASocket: TSocket; ARequestPolicy: TSBMRequestPolicy; ARouteRegistry: TSBMRouteRegistry);
 begin
     FSocket := ASocket;
     FRequestPolicy := ARequestPolicy;
+    FRouteRegistry := ARouteRegistry;
 end;
 
 procedure TSBMConnection.Close;
@@ -37,12 +40,11 @@ begin
     closesocket(FSocket);
 end;
 
-function TSBMConnection.ReadData : Boolean;
+function TSBMConnection.ReadData(var Request: TSBMRequest) : Boolean;
 var
     Buffer: array[0..1023] of Byte;
     BytesReceived: Integer;
     RawRequest: String;
-    Headers: TDictionary<String, String>;
 begin
     BytesReceived := recv(FSocket, Buffer, Length(Buffer), 0);
     if BytesReceived = SOCKET_ERROR then
@@ -56,6 +58,8 @@ begin
     if (not TSBMRequestValidator.IsRequestSmugglingSafe(RawRequest)) then
         raise EHttpErrors.BadRequest;
 
+    Request := TSBMRequestValidator.ParseRequest(RawRequest, FRequestPolicy);
+
     if (not Assigned(FRequestPolicy)) then
         Exit(True);
 
@@ -65,35 +69,35 @@ begin
     if (not TSBMRequestValidator.IsMethodAllowed(RawRequest, FRequestPolicy)) then
         raise EHttpErrors.MethodNotAllowed;
 
-    Headers := TSBMRequestValidator.ParseHeaders(RawRequest, FRequestPolicy);
-    try
-        if (not TSBMRequestValidator.HasRequiredHeaders(Headers, FRequestPolicy)) then
-            raise EHttpErrors.BadRequest;
+    if (not TSBMRequestValidator.HasRequiredHeaders(Request.Headers, FRequestPolicy)) then
+        raise EHttpErrors.BadRequest;
 
-        if (not TSBMRequestValidator.AreHeadersSafe(Headers, FRequestPolicy)) then
-            raise EHttpErrors.HeaderFieldsTooLarge;
+    if (not TSBMRequestValidator.AreHeadersSafe(Request.Headers, FRequestPolicy)) then
+        raise EHttpErrors.HeaderFieldsTooLarge;
 
-        if (not TSBMRequestValidator.IsContentTypeValid(Headers, FRequestPolicy)) then
-            raise EHttpErrors.UnsupportedMediaType;
+    if (not TSBMRequestValidator.IsContentTypeValid(Request.Headers, FRequestPolicy)) then
+        raise EHttpErrors.UnsupportedMediaType;
 
-        if (not TSBMRequestValidator.IsHostValid(Headers, FRequestPolicy)) then
-            raise EHttpErrors.BadRequest;
+    if (not TSBMRequestValidator.IsHostValid(Request.Headers, FRequestPolicy)) then
+        raise EHttpErrors.BadRequest;
 
-        if (not TSBMRequestValidator.IsUserAgentAllowed(Headers, FRequestPolicy)) then
-            raise EHttpErrors.Forbidden;
-    finally
-        Headers.Free;
-    end;
+    if (not TSBMRequestValidator.IsUserAgentAllowed(Request.Headers, FRequestPolicy)) then
+        raise EHttpErrors.Forbidden;
 
     Result := True;
 end;
 
 procedure TSBMConnection.ProcessRequest;
 var
+    Handler: TSBMRouteHandler;
+    ResponseBody: string;
     Headers: TStringList;
+    Request: TSBMRequest;
 begin
-    if (not ReadData) then
+    if (not ReadData(Request)) then
         Exit;
+
+    Handler := FRouteRegistry.GetHandler(Request.Path);
 
     // Exemplo fixo de retorno, os headers extras poderia até ser configurados
     Headers := TStringList.Create;
@@ -101,12 +105,18 @@ begin
         Headers.Add('Connection: close');
         Headers.Add('X-Custom-Header: SocketBareMetal');
 
-        SendHttpResponse(200, 'OK', '{"msg":"done"}', 'application/json', Headers);
+        if Assigned(Handler) then
+        begin
+            Handler(Request, ResponseBody);
+            SendHttpResponse(200, 'OK', ResponseBody, 'application/json', Headers);
+        end
+        else
+            raise EHttpErrors.NotFound('{"error":"Route not found"}');
     finally
         Headers.Free;
     end;
 
-    // Futuras etapas: autenticação, roteamento, etc.
+    // Futuras etapas: autenticação, etc.
 end;
 
 procedure TSBMConnection.SendData(const AData: String);
@@ -126,7 +136,7 @@ begin
 end;
 
 
-procedure TSBMConnection.SendHttpResponse(AStatusCode: Integer; const AStatusMessage: string;
+procedure TSBMConnection.SendHttpResponse(AStatusCode: Integer; const AStatusMessage: String;
   const ABody: String; const AContentType: String; const AExtraHeaders: TStrings);
 var
     Response: TStringBuilder;

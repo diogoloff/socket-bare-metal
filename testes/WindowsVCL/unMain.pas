@@ -74,7 +74,7 @@ begin
           * APoolManager: Objeto de TSBMThreadPoolManager.
           * ARequestPolicy: Objeto de TSBMRequestPolicy, se não for informado, não faz nenhum tipo de validação da estrutura, não faz parse dos Headers.
         }
-        FListener := TSBMListener.Create(8080, FPoolManager, FRequestPolicy);
+        FListener := TSBMListener.Create(8080, FPoolManager, FRequestPolicy, nil);
         FListener.Start;
     end);
 

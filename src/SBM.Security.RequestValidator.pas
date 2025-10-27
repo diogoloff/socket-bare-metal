@@ -11,6 +11,14 @@ uses
     System.SysUtils, System.Classes, System.Generics.Collections, System.RegularExpressions, System.StrUtils;
 
 type
+    // Aqui poderia ter também o query param, e até os parâmetros em path
+    TSBMRequest = record
+        Method: string;
+        Path: string;
+        Headers: TDictionary<String, String>;
+        Body: string;
+    end;
+
     TSBMRequestPolicy = class
     public
         AllowedMethods: TArray<string>;
@@ -37,8 +45,8 @@ type
         // Validação de tamanho da requisição
         class function IsRequestSizeAcceptable(const ARaw: String; const APolicy: TSBMRequestPolicy): Boolean;
 
-        // Parse dos headers em dicionário
-        class function ParseHeaders(const ARaw: String; const APolicy: TSBMRequestPolicy): TDictionary<String, String>;
+        // Parse da requisição
+        class function ParseRequest(const ARaw: String; const APolicy: TSBMRequestPolicy): TSBMRequest;
 
         // Validação de método permitido
         class function IsMethodAllowed(const ARaw: String; const APolicy: TSBMRequestPolicy): Boolean;
@@ -118,55 +126,83 @@ begin
     Result := IndexStr(Method, APolicy.AllowedMethods) >= 0;
 end;
 
-class function TSBMRequestValidator.ParseHeaders(const ARaw: String; const APolicy: TSBMRequestPolicy): TDictionary<String, String>;
+class function TSBMRequestValidator.ParseRequest(const ARaw: String; const APolicy: TSBMRequestPolicy): TSBMRequest;
 var
     Lines: TArray<String>;
-    Line, Key, Value: String;
-    I, SepPos: Integer;
+    HeaderParts: TArray<String>;
+    i: Integer;
+    InHeaders: Boolean;
+    RequestLine: TArray<String>;
+    Line: String;
+    SepPos: Integer;
+    Key: String;
+    Value: String;
     Bytes: TBytes;
 begin
-    Result := TDictionary<String, String>.Create;
     Lines := ARaw.Split([#13#10]);
+    Result.Headers := TDictionary<String, String>.Create;
+    Result.Body := '';
+    Result.Method := '';
+    Result.Path := '';
+
+    if Length(Lines) > 0 then
+    begin
+        RequestLine := Lines[0].Split([' ']);
+        if Length(RequestLine) >= 2 then
+        begin
+            Result.Method := RequestLine[0];
+            Result.Path := RequestLine[1];
+        end;
+    end;
+
+    InHeaders := True;
     for I := 1 to High(Lines) do
     begin
         Line := Lines[I].Trim;
-        if (Line = '') then
-            Break;
 
-        SepPos := Line.IndexOf(':');
-        if (SepPos > 0) then
+        if InHeaders then
         begin
-            Key := Line.Substring(0, SepPos).Trim;
-            Value := Line.Substring(SepPos + 1).Trim;
-
-            // Remover caracteres de controle #0 a #31
-            Value := TRegEx.Replace(Value, '[\x00-\x1F]', '');
-            Value := Trim(Value);
-
-            // Validar encoding UTF-8
-            // Ignora header com encoding inválido
-            try
-                Bytes := TEncoding.UTF8.GetBytes(Value);
-                Value := TEncoding.UTF8.GetString(Bytes);
-            except
+            if Line = '' then
+            begin
+                InHeaders := False;
                 Continue;
             end;
 
-            // Limite de tamanho por chave individual
-            if (Length(Key) > APolicy.MaxHeaderKeySize) then
-                Continue;
+            SepPos := Line.IndexOf(':');
+            if SepPos > 0 then
+            begin
+                Key := Line.Substring(0, SepPos).Trim;
+                Value := Line.Substring(SepPos + 1).Trim;
 
-            // Limite de tamanho por valor individual
-            if (Length(Value) > APolicy.MaxHeaderValueSize) then
-                Continue;
+                // Remover caracteres de controle #0 a #31
+                Value := TRegEx.Replace(Value, '[\x00-\x1F]', '');
+                Value := Trim(Value);
 
-            // Descarta header com tamanho total superior ao limite
-            if (Length(Key) + Length(Value) > APolicy.MaxHeaderSize) then
-                Continue;
+                // Validar encoding UTF-8
+                // Ignora header com encoding inválido
+                try
+                    Bytes := TEncoding.UTF8.GetBytes(Value);
+                    Value := TEncoding.UTF8.GetString(Bytes);
+                except
+                    Continue;
+                end;
 
-            Result.AddOrSetValue(Key.ToLower, Value);
-        end;
+                // Algumas verificações de politicas de segurança
+                if Assigned(APolicy) then
+                begin
+                    if Length(Key) > APolicy.MaxHeaderKeySize then Continue;
+                    if Length(Value) > APolicy.MaxHeaderValueSize then Continue;
+                    if Length(Key) + Length(Value) > APolicy.MaxHeaderSize then Continue;
+                end;
+
+                Result.Headers.AddOrSetValue(Key.ToLower, Value);
+            end;
+        end
+        else
+            Result.Body := Result.Body + Line + #13#10;
     end;
+
+    Result.Body := Result.Body.Trim;
 end;
 
 class function TSBMRequestValidator.HasRequiredHeaders(const AHeaders: TDictionary<String, String>; const APolicy: TSBMRequestPolicy): Boolean;

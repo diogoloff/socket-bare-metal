@@ -23,6 +23,7 @@ type
         destructor Destroy; override;
         procedure Start;
         procedure Stop;
+        property Running: Boolean read FRunning;
     end;
 
 implementation
@@ -36,7 +37,7 @@ begin
     if (not Assigned(APoolManager)) then
         raise Exception.Create('Erro ao criar TSBMListener, não foi informado o TSBMThreadPoolManager');
 
-    if (Assigned(FRouteRegistry)) then
+    if (not Assigned(ARouteRegistry)) then
         raise Exception.Create('Erro ao criar TSBMListener, não foi informado o TSBMRouteRegistry');
 
     FPoolManager := APoolManager;

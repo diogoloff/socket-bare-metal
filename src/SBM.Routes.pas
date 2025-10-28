@@ -3,10 +3,10 @@ unit SBM.Routes;
 interface
 
 uses
-    System.Generics.Collections, SBM.Security.RequestValidator;
+    System.SysUtils, System.Generics.Collections, SBM.Security.RequestValidator;
 
 type
-    TSBMRouteHandler = procedure(const Request: TSBMRequest; var Response: String);
+    TSBMRouteHandler = procedure(const Request: TSBMRequest; var Response: String) of object;
 
     TSBMRouteRegistry = class
     private
@@ -30,7 +30,7 @@ end;
 
 destructor TSBMRouteRegistry.Destroy;
 begin
-    FRoutes.Free;
+    FreeAndNil(FRoutes);
     inherited;
 end;
 

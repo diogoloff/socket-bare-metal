@@ -17,6 +17,8 @@ type
         Path: string;
         Headers: TDictionary<String, String>;
         Body: string;
+
+        procedure Finalize;
     end;
 
     TSBMRequestPolicy = class
@@ -68,6 +70,14 @@ type
     end;
 
 implementation
+
+{ TSBMRequest }
+
+procedure TSBMRequest.Finalize;
+begin
+    if Assigned(Headers) then
+        FreeAndNil(Headers);
+end;
 
 { TSBMRequestPolicy }
 
@@ -129,7 +139,6 @@ end;
 class function TSBMRequestValidator.ParseRequest(const ARaw: String; const APolicy: TSBMRequestPolicy): TSBMRequest;
 var
     Lines: TArray<String>;
-    HeaderParts: TArray<String>;
     i: Integer;
     InHeaders: Boolean;
     RequestLine: TArray<String>;

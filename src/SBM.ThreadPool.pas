@@ -124,7 +124,7 @@ begin
                 Conn.ProcessRequest;
             except
                 on E: EHttpException do
-                    Conn.SendHttpResponse(E.StatusCode, E.StatusMessage);
+                    Conn.SendHttpResponse(E.StatusCode, E.StatusMessage, E.StatusBody);
 
                 on E: Exception do
                     Conn.SendHttpResponse(500, E.Message);

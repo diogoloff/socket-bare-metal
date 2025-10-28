@@ -113,6 +113,7 @@ begin
         else
             raise EHttpErrors.NotFound('{"error":"Route not found"}');
     finally
+        Request.Finalize;
         Headers.Free;
     end;
 

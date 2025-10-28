@@ -1,10 +1,18 @@
-### No momento já esta comunicando, recebendo requisições, mas ainda não esta tratando. Projeto em desenvolvimento, a idéia é finalizar até primeiro semestre de 2026.
-
 # 🧠 SocketBareMetal
 
 Escopo e objetivos do projeto.
 
 Servidor HTTP minimalista e de alto desempenho, desenvolvido em **Delphi** com foco em **baixo nível**, **multiplataforma (Windows/Linux)** e **controle total sobre threads e conexões**.
+
+---
+
+## 🧑‍💻 Situação do Desenvolvimento
+- Recebendo requisições e tratando
+- Ainda o retorno esta fixo sempre código 200 independente do tratamento
+- Camada mínima de segurança
+- Sistema de rotas básico
+- Compativel somente VCL Windows
+> ⚠️ Atenção:** Projeto em desenvolvimento, a idéia é finalizar até primeiro semestre de 2026.
 
 ---
 
@@ -32,15 +40,15 @@ O `SocketBareMetal` é um servidor HTTP construído do zero, sem dependência de
 
 Organizado em módulos com prefixo `SBM`:
 
-| Módulo         | Responsabilidade Principal                     |
-|----------------|------------------------------------------------|
-| Listener       | Escutar conexões TCP                          |
-| Connection     | Gerenciar conexões ativas                     |
-| ThreadPool     | Processamento paralelo                        |
-| Parser         | Interpretação de requisições HTTP             |
-| Response       | Montagem e envio de respostas                 |
-| Security       | Validação de headers e proteção básica        |
-| Config         | Definições globais do projeto                 |
+| Módulo                    | Responsabilidade Principal                    |
+|---------------------------|-----------------------------------------------|
+| Connection                | Gerenciar conexões ativas                     |
+| Exception                 | Centralizar exceções HTTP                     |
+| Listener                  | Escutar conexões TCP                          |
+| Routes                    | Permite a criação de rotas                    |
+| Security.RequestValidator | Validação de headers e proteção básica        |
+| ThreadPool                | Processamento paralelo                        |
+| ThreadPoolManager         | Gerenciar a fila e trabalhadores              |
 
 ---
 

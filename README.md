@@ -12,7 +12,7 @@ Servidor HTTP minimalista e de alto desempenho, desenvolvido em **Delphi** com f
 - Camada mínima de segurança
 - Sistema de rotas básico
 - Compativel somente VCL Windows
-> ⚠️ Atenção:** Projeto em desenvolvimento, a idéia é finalizar até primeiro semestre de 2026.
+> ⚠️ **Atenção:** Projeto em desenvolvimento, a idéia é finalizar até primeiro semestre de 2026.
 
 ---
 
@@ -52,4 +52,12 @@ Organizado em módulos com prefixo `SBM`:
 
 ---
 
+## 📁 Estrutura do Projeto
+
+- `src/`: Contém os arquivos fontes do componente.
+- `testes/WindowsVCL`: Aplicação exemplo funcionando com o que já foi desenvolvido.
+
+⚠️ **Atenção:** Compativel somente com versões do Delphi superior ou igual a 10.1. Apesar de não estar usando componentes de terceiros, o uso de TObjectList, TDictionary e TTaks impossibilita uso em versões antigas, a não ser que fosse adaptado com soluções lá presentes. 
+
+---
 

@@ -57,7 +57,7 @@ Organizado em módulos com prefixo `SBM`:
 - `src/`: Contém os arquivos fontes do componente.
 - `testes/WindowsVCL`: Aplicação exemplo funcionando com o que já foi desenvolvido.
 
-⚠️ **Atenção:** Compativel somente com versões do Delphi superior ou igual a 10.1. Apesar de não estar usando componentes de terceiros, o uso de TObjectList, TDictionary e TTaks impossibilita uso em versões antigas, a não ser que fosse adaptado com soluções lá presentes. 
+> ⚠️ **Atenção:** Compativel somente com versões do Delphi superior ou igual a 10.1. Apesar de não estar usando componentes de terceiros, o uso de TObjectList, TDictionary e TTaks impossibilita uso em versões antigas, a não ser que fosse adaptado com soluções lá presentes. 
 
 ---
 
